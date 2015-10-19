@@ -3,7 +3,7 @@ package scala
 import scala.language.experimental.{ macros => canMacro }
 import scala.offheap.internal.macros
 
-package object offheap {
+trait OffheapPackage {
   /** Physical address representation.
    *  It's always an alias to Long on JVM but
    *  can also be Int on other platforms (e.g. on JS)
@@ -37,3 +37,5 @@ package object offheap {
   /** Size of memory between successive elements in `EmbedArray[T]`. */
   def strideOfEmbed[T]: Size           = macro macros.Util.strideOfEmbed_[T]
 }
+
+package object offheap extends OffheapPackage
