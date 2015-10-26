@@ -8,6 +8,7 @@ object RegionsBuild extends Build {
     version := "0.2-SNAPSHOT",
     scalaVersion := "2.11.6",
     organization := "sh.den",
+    unmanagedBase := baseDirectory.value / "lib",
     resolvers += Resolver.sonatypeRepo("snapshots"),
     resolvers += Resolver.sonatypeRepo("releases"),
     initialCommands in console += "import scala.offheap._; implicit val alloc = malloc",
