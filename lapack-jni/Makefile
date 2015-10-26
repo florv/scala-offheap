@@ -15,7 +15,7 @@ OBJS = $(patsubst src/%.c,build/%.o,$(wildcard src/*.c))
 all: build/LapackJNI.jar
 
 build/LapackJNI.jar: src/LapackJNI.c build/LapackJNI.class build/libLapackJNI.so
-	jar cf $@ -C build libLapackJNI.so -C build scala
+	jar cf $@ -C build scala
 
 build/LapackJNI.class: src/LapackJNI.java
 	mkdir -p build
