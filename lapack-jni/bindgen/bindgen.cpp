@@ -13,6 +13,8 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <boost/algorithm/string/replace.hpp>
+
 using namespace clang;
 using namespace clang::ast_matchers;
 using namespace clang::driver;
@@ -40,6 +42,10 @@ public:
         ofc << "#include <lapacke.h>" << std::endl << std::endl;
     }
 
+    void addEnumConstant(const std::string name, const std::string value) {
+        ofjava << "\tpublic static int " << name << " = " << value << ";" << std::endl;
+    }
+
     void addDecl(const FunctionDecl *Decl) {
         generateJavaCode(Decl);
         generateCode(Decl);
@@ -48,7 +54,7 @@ public:
     void generateJavaCode(const FunctionDecl *Decl) {
         std::string retType = asJavaType(Decl->getReturnType());
         std::string funName = Decl->getNameInfo().getName().getAsString();
-        ofjava << "\t public static native " << retType << " " << funName << "(";
+        ofjava << "\tpublic static native " << retType << " " << funName << "(";
         unsigned numParams = Decl->getNumParams();
         if (numParams > 0) {
             for (unsigned i = 0; i < Decl->getNumParams() - 1; ++i) {
@@ -63,8 +69,8 @@ public:
         unsigned numParams = Decl->getNumParams();
         std::string funName = Decl->getNameInfo().getName().getAsString();
         ofc << "JNIEXPORT " << asCJavaType(Decl->getReturnType())
-            << " JNICALL Java_" << funName
-            << " (" << "JNIEnv *java_env, jobject java_this, ";
+            << " JNICALL Java_scala_offheap_numeric_jni_LapackJNI_" << javaMangle(funName)
+            << " (" << "JNIEnv *java_env, jclass java_class, ";
         if (numParams > 0) {
             for (unsigned i = 0; i < Decl->getNumParams() - 1; ++i) {
                 ofc << toCJavaParam(Decl->getParamDecl(i)) << ", ";
@@ -99,6 +105,12 @@ public:
 private:
     std::ofstream ofjava;
     std::ofstream ofc;
+
+    std::string javaMangle(std::string name) {
+        boost::replace_all(name, "_", "_1");
+        return name;
+        //return std::replace(name.begin(), name.end(), '_', '|');
+    }
 
     std::string toJavaParam(const ParmVarDecl *PVD) {
         std::string t = asJavaType(PVD->getOriginalType());
@@ -136,7 +148,12 @@ private:
         } else if (t->isEnumeralType()) {
             return "int";
         } else {
-            return "j" + asJavaType(QT);
+            std::string s = asJavaType(QT);
+            if (s.compare("void") == 0) {
+                std::cout << "Non-void type has void name, assuming long instead" << std::endl;
+                return "long";
+            }
+            return s;
         }
     }
 
@@ -163,14 +180,29 @@ public:
     virtual void run(const MatchFinder::MatchResult &Result) {
         const FunctionDecl *Decl = Result.Nodes.getNodeAs<FunctionDecl>("funDecl");
         if ( ! (Decl->isThisDeclarationADefinition() && Decl->hasPrototype())) {
-            std::cout << "Found " << Decl->getNameInfo().getName().getAsString() << std::endl;
-            //std::cout << "  " << Decl->getReturnType().getAsString();
-            //for (unsigned i = 0; i < Decl->getNumParams(); ++i) {
-            //    std::cout << " " << Decl->getParamDecl(i)->getOriginalType().getAsString();
-            //}
-            //std::cout << std::endl;
+            std::cout << "Found function " << Decl->getNameInfo().getName().getAsString() << std::endl;
             BG->addDecl(Decl);
         }
+    }
+
+private:
+    BindGen *BG;
+};
+
+class EnumHandler : public MatchFinder::MatchCallback {
+public:
+    EnumHandler(BindGen *BG_) {
+        BG = BG_;
+    }
+
+    virtual void run(const MatchFinder::MatchResult &Result) {
+        const EnumConstantDecl *decl = Result.Nodes.getNodeAs<EnumConstantDecl>("enumConstantDecl");
+        std::string name = decl->getNameAsString();
+        std::cout << "Found enum constant " << name << std::endl;
+        llvm::APSInt intValue;
+        const Expr *expr = decl->getInitExpr();
+        expr->EvaluateAsInt(intValue, *Result.Context);
+        BG->addEnumConstant(name, intValue.toString(10));
     }
 
 private:
@@ -180,9 +212,10 @@ private:
 // Implements an ASTConsumer for reading the AST produced by the Clang parser
 class MyASTConsumer : public ASTConsumer {
 public:
-  MyASTConsumer(BindGen &BG) : HandlerForFunDecl(&BG) {
+  MyASTConsumer(BindGen &BG) : HandlerForFunDecl(&BG), HandlerForEnum(&BG) {
     // The MatchFinder will look for function declaration
     Matcher.addMatcher(functionDecl().bind("funDecl"), &HandlerForFunDecl);
+    Matcher.addMatcher(enumConstantDecl().bind("enumConstantDecl"), &HandlerForEnum);
   }
 
   // This is called for every translation unit. The MatchFinder is then run on the AST produced by the translation unit.
@@ -190,8 +223,14 @@ public:
     Matcher.matchAST(Context);
   }
 
+  /*
+  ~MyASTConsumer() {
+  }
+  */
+
 private:
   DeclHandler HandlerForFunDecl;
+  EnumHandler HandlerForEnum;
   MatchFinder Matcher;
 };
 
@@ -201,9 +240,9 @@ public:
 
   MyFrontendAction() : BG("LapackJNI.java", "LapackJNI.c") {}
 
-  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
+  ASTConsumer *CreateASTConsumer(CompilerInstance &CI,
                                                  StringRef file) override {
-    return llvm::make_unique<MyASTConsumer>(BG);
+    return new MyASTConsumer(BG);
   }
 
   ~MyFrontendAction() {

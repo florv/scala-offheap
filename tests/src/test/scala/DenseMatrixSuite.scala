@@ -46,4 +46,13 @@ class DenseMatrixSuite extends FunSuite {
     assert(res(1, 0) == 6)
     assert(res(1, 1) == 8)
   }
+
+  test("matrix multiplication") {
+    val m = DenseMatrix(List(List(1, 2), List(3, 4)))
+    val res = m * m
+    assert(res(0, 0) == 7)
+    assert(res(0, 1) == 10)
+    assert(res(1, 0) == 15)
+    assert(res(1, 1) == 22)
+  }
 }

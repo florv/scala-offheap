@@ -142,7 +142,7 @@ object RegionsBuild extends Build {
       incOptions := incOptions.value.withNameHashing(false),
       scalacOptions += "-Xprint:typer",
       fork in run := true,
-      javaOptions in run ++= Seq("-Xms256m", "-Xmx256m")
+      javaOptions in run ++= Seq("-Xms256m", "-Xmx256m", "-Djava.library.path=../lapack-jni/build")
     ),
     dependencies = Seq(macros, core)
   )
@@ -155,7 +155,8 @@ object RegionsBuild extends Build {
       libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.12.2" % "test",
       incOptions := incOptions.value.withNameHashing(false),
       parallelExecution in Test := false,
-      fork in Test := true
+      fork in Test := true,
+      javaOptions in Test ++= Seq("-Djava.library.path=../lapack-jni/build")
     ),
     dependencies = Seq(core, macros)
   )

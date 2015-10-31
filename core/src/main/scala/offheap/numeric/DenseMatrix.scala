@@ -1,7 +1,7 @@
 package scala.offheap.numeric
 
 import scala.offheap._
-//import scala.offheap.jni._
+import scala.offheap.numeric.jni._
 
 class DenseMatrix private (val addr: Addr) extends AnyVal {
 
@@ -37,14 +37,14 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   def *(m: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
     val res = DenseMatrix.uninit(rows, m.columns);
-    val transa: Char = 'n'
-    val transb: Char = 'n'
+    val transa: Int = LapackJNI.CblasNoTrans
+    val transb: Int = LapackJNI.CblasNoTrans
     val alpha: Double = 1
     val beta: Double = 0
     // TODO Throw exception unless (this.columns == m.rows)
     // C = alpha*op( A )*op( B ) + beta*C
-    //LapackJNI.cblas_dgemm(transa, transb, this.rows, m.columns, this.columns,
-    //  this.dataAddr, this.stride, m.dataAddr, m.stride, res.dataAddr, res.stride)
+    LapackJNI.cblas_dgemm(LapackJNI.CblasColMajor, transa, transb, this.rows, m.columns, this.columns,
+      1.0, this.dataAddr, this.stride, m.dataAddr, m.stride, 0.0, res.dataAddr, res.stride)
     res
   }
 

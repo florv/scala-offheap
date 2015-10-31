@@ -1,1 +1,1 @@
-Copy into tools/clang/tools/ of the LLVM tree then compile LLVM normally.
+This tool was tested to compile and link agains llvm-3.5.
