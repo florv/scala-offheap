@@ -8,7 +8,7 @@ JAVAH = javah
 
 CFLAGS  += -Iinclude -I"$(JAVA_HOME)/include" -I"$(JAVA_HOME)/include/linux" \
            -fPIC
-LDFLAGS += -shared -lblas
+LDFLAGS += -shared -lblas -llapacke
 
 OBJS = $(patsubst src/%.c,build/%.o,$(wildcard src/*.c))
 
@@ -31,10 +31,10 @@ build/libLapackJNI.so: build/LapackJNI.o
 
 # Generate the binding code
 src/LapackJNI.c:
-	(cd src; ../bindgen/bindgen /usr/include/cblas.h -- -o /dev/null)
+	(cd src; ../bindgen/bindgen include.h -- -o /dev/null)
 
 src/LapackJNI.java:
-	(cd src; ../bindgen/bindgen /usr/include/cblas.h -- -o /dev/null)
+	(cd src; ../bindgen/bindgen include.h -- -o /dev/null)
 
 clean:
 	-rm -rf build

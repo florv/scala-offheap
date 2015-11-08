@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <unordered_map>
 
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
@@ -44,6 +45,7 @@ public:
 
     void addEnumConstant(const std::string name, const std::string value) {
         ofjava << "\tpublic static int " << name << " = " << value << ";" << std::endl;
+        std::cout << "\tpublic static int " << name << " = " << value << ";" << std::endl;
     }
 
     void addDecl(const FunctionDecl *Decl) {
@@ -130,8 +132,11 @@ private:
             LangOptions lo = LangOptions();
             PrintingPolicy policy = PrintingPolicy(lo);
             return std::string(bt->getName(policy));
+        } else if (t->isComplexType()) {
+            // TODO: This probably won't work.
+            return "long";
         } else {
-            // FIXME
+            std::cout << "No java type to map (" + QualType::getAsString(QT.split()) + ") to." << std::endl;
             return "???";
         }
     }
@@ -160,16 +165,14 @@ private:
     std::string castAsC(const ParmVarDecl *PVD) {
         const Type *t = PVD->getOriginalType().getTypePtr();
         if (t->isPointerType()) {
-            // FIXME: Handle pointer of pointer (at least do an easy to understand error.
-            const BuiltinType *bt = static_cast<const BuiltinType*>(t->getPointeeType().getTypePtr());
-            LangOptions lo = LangOptions();
-            PrintingPolicy policy = PrintingPolicy(lo);
-            return "(" + std::string(bt->getName(policy)) + "*) ";
+            return "(" + QualType::getAsString(PVD->getType().split()) + ")";
         } else {
             return "";
         }
     }
 };
+
+typedef std::unordered_map<std::string, int> DeclBoolMap;
 
 class DeclHandler : public MatchFinder::MatchCallback {
 public:
@@ -178,15 +181,29 @@ public:
     }
 
     virtual void run(const MatchFinder::MatchResult &Result) {
+        SourceManager &sm = Result.Context->getSourceManager();
         const FunctionDecl *Decl = Result.Nodes.getNodeAs<FunctionDecl>("funDecl");
-        if ( ! (Decl->isThisDeclarationADefinition() && Decl->hasPrototype())) {
-            std::cout << "Found function " << Decl->getNameInfo().getName().getAsString() << std::endl;
-            BG->addDecl(Decl);
+        std::string location = sm.getFilename(Decl->getLocation()).str();
+        std::string name = Decl->getNameInfo().getName().getAsString();
+        if (location == "/usr/include/cblas.h"
+                || location == "/usr/include/lapacke.h") {
+            if ( ! (Decl->isThisDeclarationADefinition()
+                        && Decl->hasPrototype())) {
+                std::cout << "Found function " << name
+                          << " in " << location << std::endl;
+                if (map.count(name)) {
+                    std::cout << "Is a duplicate, ignoring it." << std::endl;
+                } else {
+                    map.insert( {{name, 1}} );
+                    BG->addDecl(Decl);
+                }
+            }
         }
     }
 
 private:
     BindGen *BG;
+    DeclBoolMap map;
 };
 
 class EnumHandler : public MatchFinder::MatchCallback {
@@ -196,13 +213,21 @@ public:
     }
 
     virtual void run(const MatchFinder::MatchResult &Result) {
+        SourceManager &sm = Result.Context->getSourceManager();
         const EnumConstantDecl *decl = Result.Nodes.getNodeAs<EnumConstantDecl>("enumConstantDecl");
-        std::string name = decl->getNameAsString();
-        std::cout << "Found enum constant " << name << std::endl;
-        llvm::APSInt intValue;
-        const Expr *expr = decl->getInitExpr();
-        expr->EvaluateAsInt(intValue, *Result.Context);
-        BG->addEnumConstant(name, intValue.toString(10));
+        std::string location = sm.getFilename(decl->getLocation()).str();
+        if (1) {
+            std::string name = decl->getNameAsString();
+            std::cout << "Found enum constant " << name << " in " << location << std::endl;
+            llvm::APSInt intValue;
+            const Expr *expr = decl->getInitExpr();
+            if (expr != NULL) {
+                expr->EvaluateAsInt(intValue, *Result.Context);
+                BG->addEnumConstant(name, intValue.toString(10));
+            } else {
+                std::cout << "Not an int enum, skipping." << std::endl;
+            }
+        }
     }
 
 private:
