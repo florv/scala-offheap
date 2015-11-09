@@ -7,6 +7,10 @@ import scala.offheap.numeric.jni._
 //   - Don't assume stride size match (for instance when copying)
 //   - Methods to extract submatrices
 
+/* With @data it is not possible to override methods thus for instance copy can't be implemented
+@data class DenseMatrix(rows: Int, columns: Int, stride: Int, dataAddr: Long) {
+*/
+
 class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   private def dataAddr = addr + 3 * strideOf[Int]
@@ -54,6 +58,16 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     Memory.getDouble(addrOf(row, column))
   }
 
+  def apply(rs: Range, cs: Range)(implicit a: Allocator): DenseMatrix = {
+    val m = DenseMatrix.uninit(rs.size, cs.size)
+    for ((c, cm) <- cs.zipWithIndex) {
+      for ((r, rm) <- rs.zipWithIndex) {
+        m(rm, cm) = apply(r, c)
+      }
+    }
+    m
+  }
+
   def update(row: Int, column: Int, value: Double): Unit = {
     Memory.putDouble(addrOf(row, column), value)
   }
@@ -88,7 +102,7 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     // TODO Throw exception unless (this.columns == m.rows)
     // C = alpha*op( A )*op( B ) + beta*C
     LapackJNI.cblas_dgemm(LapackJNI.CblasColMajor, transa, transb, this.rows, m.columns, this.columns,
-      1.0, this.dataAddr, this.stride, m.dataAddr, m.stride, 0.0, res.dataAddr, res.stride)
+      1.0, dataAddr, stride, m.dataAddr, m.stride, 0.0, res.dataAddr, res.stride)
     res
   }
 
@@ -108,7 +122,16 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     }
     val incx = if (columns == 1) 1 else stride
     val incy = if (m.columns == 1) 1 else m.stride
+    println(incx)
+    println(incy)
+    println(n)
+    println(Memory.getDouble(dataAddr))
+    println(Memory.getDouble(m.dataAddr))
     LapackJNI.cblas_ddot(n, dataAddr, incx, m.dataAddr, incy)
+  }
+
+  override def toString(): String = {
+    "%d×%d matrix @%x".format(rows, columns, dataAddr)
   }
 
   /** Element-wise addition */
@@ -248,22 +271,46 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   /** Find max */
   def max(): Double = {
-    ???
+    val (r, c) = argmax
+    apply(r, c)
   }
 
   /** Find min */
   def min(): Double = {
-    ???
+    val (r, c) = argmin
+    apply(r, c)
   }
 
   /** Coordinates of the maximum */
   def argmax(): (Int, Int) = {
-    ???
+    var coord = (0, 0)
+    var v = apply(0, 0)
+    for (col <- 0 until columns) {
+      for (row <- 0 until rows) {
+        val c = apply(row, col)
+        if (c > v) {
+          coord = (row, col)
+          v = c
+        }
+      }
+    }
+    coord
   }
 
   /** Coordinates of the minimum */
   def argmin(): (Int, Int) = {
-    ???
+    var coord = (0, 0)
+    var v = apply(0, 0)
+    for (col <- 0 until columns) {
+      for (row <- 0 until rows) {
+        val c = apply(row, col)
+        if (c < v) {
+          coord = (row, col)
+          v = c
+        }
+      }
+    }
+    coord
   }
 
   /** Sum of the elemens */
@@ -292,8 +339,14 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
   }
 
   /** Return a transposed copy of the matrix. */
-  def t(): DenseMatrix = {
-    ???
+  def t()(implicit a: Allocator): DenseMatrix = {
+    val m = DenseMatrix.uninit(rows, columns)
+    for (col <- 0 until columns) {
+      for (row <- 0 until rows) {
+        m(col, row) = apply(row, col)
+      }
+    }
+    m
   }
 
   /** Return a copy of the matrix. */
@@ -305,17 +358,36 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   /** Copy the lower triangular portion in a new matrix. */
   def lowerTriangular()(implicit a: Allocator): DenseMatrix = {
-    ???
+    val m = copy
+    for (col <- 1 until columns) {
+      val l = if (col < rows) col else rows
+      Memory.zero(addrOf(0, col), l * strideOf[Double])
+    }
+    m
   }
 
   /** Copy the upper triangular portion in a new matrix. */
   def upperTriangular()(implicit a: Allocator): DenseMatrix = {
-    ???
+    val m = copy
+    for (col <- 1 until columns) {
+      val l = if (col < rows) col else rows
+      Memory.zero(addrOf(rows - l, col), l * strideOf[Double])
+    }
+    m
   }
 
   /** Concatenate a matrix underneath. */
   def vertcat(m: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
-    ???
+    if (m.columns != columns) {
+      throw new IllegalArgumentException("Number of columns do not match: " + rows +
+        "×" + columns + "on the left while " + m.rows + "×" + m.columns + "on the right")
+    }
+    val res = DenseMatrix.uninit(rows + m.rows, columns)
+    for (col <- 0 until columns) {
+      Memory.copy(addrOf(0, col), res.addrOf(0, col), rows * strideOf[Double])
+      Memory.copy(m.addrOf(0, col), res.addrOf(rows, col), m.rows * strideOf[Double])
+    }
+    res
   }
 
   /** Concatenate a matrix on the right. */
@@ -331,8 +403,12 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
       Memory.copy(dataAddr, res.dataAddr, len1)
       Memory.copy(m.dataAddr, res.dataAddr + len1, len2)
     } else {
-      /* Copy each column individually */
-      ???
+      for (col <- 0 until columns) {
+        Memory.copy(addrOf(0, col), res.addrOf(0, col), rows * strideOf[Double])
+      }
+      for (col <- 0 until m.columns) {
+        Memory.copy(addrOf(0, col), res.addrOf(0, columns + col), rows * strideOf[Double])
+      }
     }
     res
   }
@@ -341,17 +417,69 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
    *
    * Solve this * x = b and return x */
   def \(b: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
-    ???
+    val x = b.copy
+    val ipiv = DenseMatrix.uninit(rows, 1)
+    val info = LapackJNI.LAPACKE_dgesv(LapackJNI.CblasColMajor, rows,
+        x.columns, dataAddr, stride, ipiv.dataAddr, x.dataAddr, x.stride)
+    if (info < 0) {
+      throw new RuntimeException("Invalid argument passed to dgesv")
+    } else if (info > 0) {
+      throw new RuntimeException("Matrix a is singular")
+    } else {
+      x
+    }
   }
 
   /** Determinant */
-  def det(): Double = {
-    ???
+  def det()(implicit a: Allocator): Double = {
+    if (rows != columns) {
+      throw new IllegalArgumentException("Matrix must be square, not " +
+          rows + "×" + columns)
+    }
+    // Perform LU decomposition
+    val lu = copy
+    val ipiv = DenseMatrix.uninit(rows, 1) // FIXME: Use DenseMatrix[Int]
+    val info = LapackJNI.LAPACKE_dgetrf(LapackJNI.CblasColMajor, rows, columns,
+        lu.dataAddr, lu.stride, ipiv.dataAddr)
+    if (info != 0) {
+      throw new RuntimeException("dgetrf failed")
+    } else {
+      // Count number of swapped rows (ipiv contains Fortran indices)
+      //val numSwaps = ipiv.zipWithIndex.count { p => (p._1 - 1) != p._2 }
+      var numSwaps = 0
+      for (i <- 0 until ipiv.rows) {
+        val p = Memory.getInt(ipiv.dataAddr + i * strideOf[Int])
+        if ((p - 1) != i) numSwaps += 1 // FIXME: Use DenseMatrix[Int]
+      }
+      // Determinant is optained by multiplying the diagonal elements and
+      // multiplying this result by -1.0 if number of swapped rows is odd
+      var d = if (numSwaps %2 == 0) 1.0 else -1.0
+      for (i <- 0 until math.min(rows, columns)) {
+        d *= lu(i, i)
+      }
+      d
+    }
   }
 
   /** Matrix inverse */
   def inv()(implicit a: Allocator): DenseMatrix = {
-    ???
+    if (rows != columns) {
+      throw new IllegalArgumentException("Matrix must be square, not " +
+          rows + "×" + columns)
+    }
+    val lu = copy
+    val ipiv = DenseMatrix.uninit(rows, 1) // FIXME: Use DenseMatrix[Int]
+    var info = LapackJNI.LAPACKE_dgetrf(LapackJNI.CblasColMajor, rows, columns,
+        lu.dataAddr, lu.stride, ipiv.dataAddr)
+    if (info != 0) {
+      throw new RuntimeException("dgetrf failed")
+    }
+    info = LapackJNI.LAPACKE_dgetri(LapackJNI.CblasColMajor, columns,
+        lu.dataAddr, lu.stride, ipiv.dataAddr)
+    if (info != 0) {
+      throw new RuntimeException("dgetri failed")
+    }
+    lu
   }
 
   /** Moore-Penrose pseudoinverse */
@@ -365,6 +493,7 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
   }
 
   /* TODO: Eigenvectors and eigenvalues */
+
 }
 
 object DenseMatrix {
@@ -421,10 +550,17 @@ object DenseMatrix {
 
   /** Create a square matrix with the given elements on the diagonal. */
   def diag(d: List[Double])(implicit a: Allocator): DenseMatrix = {
-    var m = uninit(d.size, d.size)
+    var m = zeros(d.size, d.size)
     for (i <- 0 until d.size) {
       m(i, i) = d(i)
     }
+    m
+  }
+
+  /** Create an identity matrix */
+  def eye(n: Int)(implicit a: Allocator): DenseMatrix = {
+    var m = zeros(n, n)
+    for (i <- 0 until n) m(i, i) = 1
     m
   }
 
