@@ -56,11 +56,27 @@ class DenseMatrixSuite extends FunSuite {
     assert(res(1, 1) == 22)
   }
 
+  test("matrix multiplication dimensions mismatch") {
+    val m = DenseMatrix(List(List(1, 2), List(3, 4)))
+    val n = DenseMatrix(List(List(1, 2), List(3, 4), List(5, 6)))
+    intercept[IllegalArgumentException] {
+      m * n
+    }
+  }
+
+  /*
+  test("breeze") {
+    import breeze.linalg.DenseMatrix
+    import breeze.linalg._
+    val m: breeze.linalg.DenseMatrix[Double] = DenseMatrix((0.0, 2.0), (0.0, 0.0), (1.0, 0.0))
+    val res = inv(m)
+  }
+  */
+
   ignore("dot product") {
     //val a = DenseMatrix(List(List(1.0), List(2.0), List(3.0)))
     //val b = DenseMatrix(List(List(4.0), List(5.0), List(6.0)))
     val a = DenseMatrix(List(List(1.0), List(2.0), List(4.0), List(8.0), List(16.0), List(32.0)))
-    println(a)
     val b = DenseMatrix(List(List(2.0), List(1.0), List(1.0), List(1.0), List(1.0), List(32.0)))
     val res = a.dot(b)
     assert(res == 32)
@@ -102,5 +118,27 @@ class DenseMatrixSuite extends FunSuite {
     assert(a(0, 1) == 1)
     assert(a(1, 0) == 1.5)
     assert(a(1, 1) == -0.5)
+  }
+
+  test("inverse of singular matrix") {
+    val a = DenseMatrix(List(List(1, 1), List(1, 1)))
+    intercept[MatrixSingularException] {
+      a.inv()
+    }
+  }
+
+  test("inverse of non square matrix") {
+    val a = DenseMatrix(List(List(1, 2), List(3, 4), List(5, 6)))
+    intercept[IllegalArgumentException] {
+      a.inv()
+    }
+  }
+
+  test("big multiply bug around 256") {
+    val phi2 = DenseMatrix.ones(400, 5)
+    val w2 = DenseMatrix.ones(5, 24)
+
+    val theta2 = (phi2 * w2)//.toDenseMatrix
+    assert(theta2(256,0) != 0)
   }
 }

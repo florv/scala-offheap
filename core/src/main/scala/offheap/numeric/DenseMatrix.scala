@@ -4,8 +4,7 @@ import scala.offheap._
 import scala.offheap.numeric.jni._
 
 // TODO:
-//   - Don't assume stride size match (for instance when copying)
-//   - Methods to extract submatrices
+//   - Handle exception like breeze
 
 /* With @data it is not possible to override methods thus for instance copy can't be implemented
 @data class DenseMatrix(rows: Int, columns: Int, stride: Int, dataAddr: Long) {
@@ -94,12 +93,15 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   /** Matrix multiplication */
   def *(m: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
+    if (columns != m.rows) {
+      throw new IllegalArgumentException("Dimension mismatch: "
+          + rows + "×" + columns + " and " + m.rows + "×" + m.columns)
+    }
     val res = DenseMatrix.uninit(rows, m.columns);
     val transa: Int = LapackJNI.CblasNoTrans
     val transb: Int = LapackJNI.CblasNoTrans
     val alpha: Double = 1
     val beta: Double = 0
-    // TODO Throw exception unless (this.columns == m.rows)
     // C = alpha*op( A )*op( B ) + beta*C
     LapackJNI.cblas_dgemm(LapackJNI.CblasColMajor, transa, transb, this.rows, m.columns, this.columns,
       1.0, dataAddr, stride, m.dataAddr, m.stride, 0.0, res.dataAddr, res.stride)
@@ -118,16 +120,16 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     }
     val n = if (columns != 1) columns else rows
     if (m.columns != n && m.rows != n) {
-      throw new IllegalArgumentException("The vector sizes don't match")
+      throw new IllegalArgumentException("Vector sizes don't match")
     }
     val incx = if (columns == 1) 1 else stride
     val incy = if (m.columns == 1) 1 else m.stride
-    println(incx)
-    println(incy)
-    println(n)
-    println(Memory.getDouble(dataAddr))
-    println(Memory.getDouble(m.dataAddr))
-    LapackJNI.cblas_ddot(n, dataAddr, incx, m.dataAddr, incy)
+    println(this + " inc " + incx)
+    println(m + " inc " + incy)
+    println((0 until n).map(x => apply(x, 0)).mkString(" "))
+    println((0 until n).map(x => m.apply(x, 0)).mkString(" "))
+    val res = LapackJNI.cblas_ddot(n, dataAddr, incx, m.dataAddr, incy)
+    res
   }
 
   override def toString(): String = {
@@ -233,7 +235,7 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
   /** Apply the given function on each element, in-place. */
   def inplace(f: Double => Double): Unit = {
     for (col <- 0 until columns) {
-      for (row <- 0 until columns) {
+      for (row <- 0 until rows) {
         update(row, col, f(apply(row, col)))
       }
     }
@@ -471,13 +473,17 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     val ipiv = DenseMatrix.uninit(rows, 1) // FIXME: Use DenseMatrix[Int]
     var info = LapackJNI.LAPACKE_dgetrf(LapackJNI.CblasColMajor, rows, columns,
         lu.dataAddr, lu.stride, ipiv.dataAddr)
-    if (info != 0) {
-      throw new RuntimeException("dgetrf failed")
+    if (info < 0) {
+      throw new RuntimeException(
+        "Argument %d de dgetrf is invalid".format(-info))
     }
     info = LapackJNI.LAPACKE_dgetri(LapackJNI.CblasColMajor, columns,
         lu.dataAddr, lu.stride, ipiv.dataAddr)
-    if (info != 0) {
-      throw new RuntimeException("dgetri failed")
+    if (info < 0) {
+      throw new RuntimeException(
+        "Argument %d to dgetri is invalid".format(-info))
+    } else if (info > 0) {
+      throw new MatrixSingularException
     }
     lu
   }
@@ -541,11 +547,16 @@ object DenseMatrix {
     zeros(rows, 1)
   }
 
-  /** Create a vector of ones. */
-  def ones(rows: Int)(implicit a: Allocator): DenseMatrix = {
-    val m = uninit(rows, 1)
+  /** Create a matrix of ones. */
+  def ones(rows: Int, columns: Int)(implicit a: Allocator): DenseMatrix = {
+    val m = uninit(rows, columns)
     m.inplace(_ => 1)
     m
+  }
+
+  /** Create a vector of ones. */
+  def ones(rows: Int)(implicit a: Allocator): DenseMatrix = {
+    ones(rows, 1)
   }
 
   /** Create a square matrix with the given elements on the diagonal. */
