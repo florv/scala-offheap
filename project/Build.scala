@@ -153,6 +153,8 @@ object RegionsBuild extends Build {
     settings = noPublishDefaults ++ Seq(
       libraryDependencies += "org.scalatest" % "scalatest_2.11" % "2.2.4" % "test",
       libraryDependencies += "org.scalacheck" %% "scalacheck" % "1.12.2" % "test",
+      libraryDependencies += "org.scalanlp" %% "breeze" % "0.11.2",
+      libraryDependencies += "org.scalanlp" %% "breeze-natives" % "0.11.2",
       incOptions := incOptions.value.withNameHashing(false),
       parallelExecution in Test := false,
       fork in Test := true,
@@ -164,7 +166,11 @@ object RegionsBuild extends Build {
   lazy val jmh = Project(
     "jmh",
     file("jmh"),
-    settings = noPublishDefaults ++ jmhSettings,
+    settings = noPublishDefaults ++ jmhSettings ++ Seq(
+      javaOptions in run ++= Seq("-Djava.library.path=../lapack-jni/build"),
+      libraryDependencies += "org.scalanlp" %% "breeze" % "0.11.2",
+      libraryDependencies += "org.scalanlp" %% "breeze-natives" % "0.11.2"
+    ),
     dependencies = Seq(core)
   )
 }
