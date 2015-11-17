@@ -13,10 +13,10 @@ import scala.offheap.numeric._
 @State(Scope.Thread)
 class DenseMatrix {
 
-  implicit val alloc = malloc
+  implicit val props = Region.Props(Pool(pageSize=81920 * 100, chunkSize=81920 * 1000))
 
-  val offheapMatrix1 = DenseMatrix.rand(100, 100)
-  val offheapMatrix2 = DenseMatrix.rand(100, 100)
+  val offheapMatrix1 = DenseMatrix.rand(100, 100)(malloc)
+  val offheapMatrix2 = DenseMatrix.rand(100, 100)(malloc)
 
   val breezeMatrix1 = breeze.linalg.DenseMatrix.rand(100, 100)
   val breezeMatrix2 = breeze.linalg.DenseMatrix.rand(100, 100)
@@ -28,16 +28,14 @@ class DenseMatrix {
         unless you pass options similar to -f 1 -i 5 -wi 5 when running jmh.
         Surprisingly wrapping the multiplication in a memory region doesn't change anything.
     */
-    val res = offheapMatrix1 * offheapMatrix2
-    /*
+    //val res = offheapMatrix1 * offheapMatrix2
     Region { implicit r =>
-      val res = offheapMatrix1 * offheapMatrix2
+      offheapMatrix1 * offheapMatrix2
     }
-    */
   }
 
   @Benchmark
   def breezeMultiplication = {
-    val res = breezeMatrix1 * breezeMatrix2
+    breezeMatrix1 * breezeMatrix2
   }
 }
