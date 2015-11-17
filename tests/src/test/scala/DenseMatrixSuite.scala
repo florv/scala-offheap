@@ -73,13 +73,11 @@ class DenseMatrixSuite extends FunSuite {
   }
   */
 
-  ignore("dot product") {
-    //val a = DenseMatrix(List(List(1.0), List(2.0), List(3.0)))
-    //val b = DenseMatrix(List(List(4.0), List(5.0), List(6.0)))
+  test("dot product") {
     val a = DenseMatrix(List(List(1.0), List(2.0), List(4.0), List(8.0), List(16.0), List(32.0)))
     val b = DenseMatrix(List(List(2.0), List(1.0), List(1.0), List(1.0), List(1.0), List(32.0)))
     val res = a.dot(b)
-    assert(res == 32)
+    assert(res == 1056.0)
   }
 
   test("matrix equality") {

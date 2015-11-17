@@ -12,7 +12,7 @@ import scala.offheap.numeric.jni._
 
 class DenseMatrix private (val addr: Addr) extends AnyVal {
 
-  private def dataAddr = addr + 3 * strideOf[Int]
+  private def dataAddr = addr + 4 * strideOf[Int]
   private def stride = Memory.getInt(this.addr + 2 * strideOf[Int])
   def rows = Memory.getInt(this.addr)
   def columns = Memory.getInt(this.addr + strideOf[Int])
@@ -527,7 +527,10 @@ object DenseMatrix {
   def uninit(rows: Int, columns: Int)(implicit a: Allocator): DenseMatrix = {
     if (rows <= 0) throw new IllegalArgumentException("Number of rows must be strictly positive")
     if (columns <= 0) throw new IllegalArgumentException("Number of columns must be strictly positive")
-    val size = 3 * strideOf[Int] + rows * columns * strideOf[Double]
+
+    // 4 instead of 3 to keep data aligned on 16 bytes boundaries
+    val size = 4 * strideOf[Int] + rows * columns * strideOf[Double]
+
     val addr = a.allocate(size)
     val stride = rows
     val m = fromAddr(addr)
