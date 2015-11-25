@@ -531,7 +531,7 @@ object DenseMatrix {
     // 4 instead of 3 to keep data aligned on 16 bytes boundaries
     val size = 4 * strideOf[Int] + rows * columns * strideOf[Double]
 
-    val addr = a.allocate(size)
+    val addr = a.allocate(size, 16)
     val stride = rows
     val m = fromAddr(addr)
     m.setMetadata(rows, columns, stride)
