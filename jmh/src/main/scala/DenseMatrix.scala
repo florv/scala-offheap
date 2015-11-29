@@ -15,11 +15,16 @@ class DenseMatrix {
 
   implicit val props = Region.Props(Pool(pageSize=81920 * 100, chunkSize=81920 * 1000))
 
+  val d1: Double = math.random
+  val d2: Double = math.random
+
   val offheapMatrix1 = DenseMatrix.rand(100, 100)(malloc)
   val offheapMatrix2 = DenseMatrix.rand(100, 100)(malloc)
+  val offheapMatrix3 = DenseMatrix.rand(100, 100)(malloc)
 
   val breezeMatrix1 = breeze.linalg.DenseMatrix.rand(100, 100)
   val breezeMatrix2 = breeze.linalg.DenseMatrix.rand(100, 100)
+  val breezeMatrix3 = breeze.linalg.DenseMatrix.rand(100, 100)
 
   @Benchmark
   def offheapMultiplication = {
@@ -37,5 +42,26 @@ class DenseMatrix {
   @Benchmark
   def breezeMultiplication = {
     breezeMatrix1 * breezeMatrix2
+  }
+
+  @Benchmark
+  def offheapMultiplication2 = {
+    Region { implicit r =>
+      d1 * offheapMatrix1 * offheapMatrix2 + d2 * offheapMatrix3
+    }
+  }
+
+  @Benchmark
+  def offheapOptimizedMultiplication2 = {
+    Region { implicit r =>
+      opt {
+        d1 * offheapMatrix1 * offheapMatrix2 + d2 * offheapMatrix3
+      }
+    }
+  }
+
+  @Benchmark
+  def breezeMultiplication2 = {
+    d1 * breezeMatrix1 * breezeMatrix2 + d2 * breezeMatrix3
   }
 }

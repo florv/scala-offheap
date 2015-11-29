@@ -519,6 +519,13 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   /* TODO: Eigenvectors and eigenvalues */
 
+  /* Lapack operations */
+  def dgemm(alpha: Double, beta: Double, a: DenseMatrix, at: Boolean, b: DenseMatrix, bt: Boolean): Unit = {
+    val transa = if (at) LapackJNI.CblasTrans else LapackJNI.CblasNoTrans
+    val transb = if (bt) LapackJNI.CblasTrans else LapackJNI.CblasNoTrans
+    LapackJNI.cblas_dgemm(LapackJNI.CblasColMajor, transa, transb, a.rows, b.columns, columns,
+      alpha, a.dataAddr, a.stride, b.dataAddr, b.stride, beta, dataAddr, stride)
+  }
 }
 
 object DenseMatrix {
