@@ -108,6 +108,11 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     res
   }
 
+  /** Matrix multiplication by scalar */
+  def *(v: Double)(implicit a: Allocator): DenseMatrix = {
+    DenseMatrix.tabulate(rows, columns)((r, c) => apply(r, c) * v)
+  }
+
   /** Dot product
    *
    * This method automatically transpose the argument if necessary. */
@@ -602,4 +607,11 @@ object DenseMatrix {
     rand(rows, 1)
   }
 
+}
+
+/* This works with the implicit convertions declared in the numeric package. */
+class DenseMatrixRichDouble(val value: Double) extends AnyVal {
+  def * (matrix: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
+    matrix * value
+  }
 }

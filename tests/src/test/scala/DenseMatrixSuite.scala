@@ -139,4 +139,16 @@ class DenseMatrixSuite extends FunSuite {
     val theta2 = (phi2 * w2)//.toDenseMatrix
     assert(theta2(256,0) != 0)
   }
+
+  test("matrix multiplication by scalar on the left") {
+    val m = DenseMatrix(List(List(1, 2), List(3, 4)))
+    val res = 2 * m
+    assert(res == DenseMatrix(List(List(2, 4), List(6, 8))))
+  }
+
+  test("matrix multiplication by scalar on the right") {
+    val m = DenseMatrix(List(List(1, 2), List(3, 4)))
+    val res = m * 2
+    assert(res == DenseMatrix(List(List(2, 4), List(6, 8))))
+  }
 }
