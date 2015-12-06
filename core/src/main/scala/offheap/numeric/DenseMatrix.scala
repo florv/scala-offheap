@@ -141,6 +141,20 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     "%d×%d matrix @%x".format(rows, columns, dataAddr)
   }
 
+  def toAscii(): String = {
+    val spaces = " " * (5 * columns + 1)
+    var s = "┌" + spaces + "┐\n"
+    for (row <- 0 until rows) {
+      s += "│ "
+      for (col <- 0 until columns) {
+        s += "%.2f ".format(apply(row, col))
+      }
+      s += "│\n"
+    }
+    s += "└" + spaces + "┘"
+    s
+  }
+
   /** Element-wise addition */
   def +(m: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
     inplaceOp(m, (a, b) => a + b)
