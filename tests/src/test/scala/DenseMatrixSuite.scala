@@ -112,10 +112,10 @@ class DenseMatrixSuite extends FunSuite {
 
   test("inverse") {
     val a = DenseMatrix(List(List(1, 2), List(3, 4)))
-    assert(a(0, 0) == -2)
-    assert(a(0, 1) == 1)
-    assert(a(1, 0) == 1.5)
-    assert(a(1, 1) == -0.5)
+    val expect = DenseMatrix(List(List(-2, 1), List(1.5, -0.5)))
+    val res = a.inv - expect
+    assert(res.norm < 1e-14, "Got \n" + res.toAscii + " while exected is\n"
+      + expect.toAscii)
   }
 
   test("inverse of singular matrix") {
@@ -150,5 +150,45 @@ class DenseMatrixSuite extends FunSuite {
     val m = DenseMatrix(List(List(1, 2), List(3, 4)))
     val res = m * 2
     assert(res == DenseMatrix(List(List(2, 4), List(6, 8))))
+  }
+
+  test("Newton-Raphson") {
+    def f(v: DenseMatrix): DenseMatrix = {
+      val a = math.pow(v(0, 0), 2) - 2 * v(0, 0) + math.pow(v(1, 0), 2) - v(2, 0) + 1
+      val b = v(0, 0) * math.pow(v(1, 0), 2) - v(0, 0) - 3 * v(1, 0) + v(1, 0) * v(2, 0) + 2
+      val c = v(0, 0) * math.pow(v(2, 0), 2) - 3 * v(2, 0) + v(1, 0) * math.pow(v(2, 0), 2) + v(0, 0) * v(1, 0)
+      DenseMatrix(List(List(a), List(b), List(c)))
+    }
+
+    def j(v: DenseMatrix): DenseMatrix = {
+      val a = 2 * v(0, 0) - 2
+      val b = 2 * v(1, 0)
+      val c = -1
+      val d = math.pow(v(1, 0), 2) - 1
+      val e = 2 * v(0, 0) * v(1, 0) - 3 + v(2, 0)
+      val f = v(1, 0)
+      val g = math.pow(v(2, 0), 2) + v(1, 0)
+      val h = math.pow(v(2, 0), 2) + v(0, 0)
+      val i = 2 * v(0, 0) * v(2, 0) - 3 + 2 * v(1, 0) * v(2, 0)
+      DenseMatrix(List(List(a, b, c), List(d, e, f), List(g, h, i)))
+    }
+
+    def newt(x: DenseMatrix, f: DenseMatrix => DenseMatrix, j: DenseMatrix => DenseMatrix): DenseMatrix = {
+      val fn = f(x)
+      val jn = j(x)
+      val d = jn.inv * fn
+      val xn = x - d
+      if (d.norm < 1e-14) xn else newt(xn, f, j)
+    }
+
+    val x0 = DenseMatrix(List(List(1), List(2), List(3)))
+    val res = newt(x0, f, j)
+    assert(f(res).norm < 1e-14)
+
+    val x1 = DenseMatrix(List(List(-1), List(-1), List(-1)))
+    val res1 = newt(x1, f, j)
+    assert(f(res1).norm < 1e-14)
+
+    assert(res1 != res)
   }
 }

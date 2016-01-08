@@ -3,9 +3,6 @@ package scala.offheap.numeric
 import scala.offheap._
 import scala.offheap.numeric.jni._
 
-// TODO:
-//   - Handle exception like breeze
-
 /* With @data it is not possible to override methods thus for instance copy can't be implemented
 @data class DenseMatrix(rows: Int, columns: Int, stride: Int, dataAddr: Long) {
 */
@@ -34,6 +31,8 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     dataAddr + row * strideOf[Double] + stride * strideOf[Double] * column
   }
 
+  /** Apply the given function to each element of this matrix and the respective element
+   *  of op argument. The result of the function updates the corresponding element of res.*/
   private def inplaceOpNoAlloc(op: DenseMatrix, f: (Double, Double) => Double, res: DenseMatrix): Unit = {
     if (op.rows != rows || op.columns != columns) {
       throw new IllegalArgumentException("Matrices dimensions don't match: "
@@ -47,16 +46,20 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     }
   }
 
+  /** Create a new matrix by applaying the given function to each element of
+   *  this matrix and the same element of the given op matrix. */
   private def inplaceOp(op: DenseMatrix, f: (Double, Double) => Double)(implicit a: Allocator): DenseMatrix = {
     val res = DenseMatrix.uninit(rows, columns)
       inplaceOpNoAlloc(op, f, res)
     res
   }
 
+  /** Return the element at the given position. Indexes start at 0. */
   def apply(row: Int, column: Int): Double = {
     Memory.getDouble(addrOf(row, column))
   }
 
+  /** Return a new matrix with the elements corresponding to the given ranges. */
   def apply(rs: Range, cs: Range)(implicit a: Allocator): DenseMatrix = {
     val m = DenseMatrix.uninit(rs.size, cs.size)
     for ((c, cm) <- cs.zipWithIndex) {
@@ -67,10 +70,14 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     m
   }
 
+  /** Modify the element at the given position. */
   def update(row: Int, column: Int, value: Double): Unit = {
     Memory.putDouble(addrOf(row, column), value)
   }
 
+  /** Apply the given function each element of the matrix. The
+   *  function receive the coordinates of the element and return the new value
+   *  for each element. */
   def updateAll(f: (Int, Int) => Double): Unit = {
     for (col <- 0 until columns) {
       for (row <- 0 until columns) {
@@ -141,6 +148,7 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     "%d×%d matrix @%x".format(rows, columns, dataAddr)
   }
 
+  /** Return an ASCII representation of this matrix. */
   def toAscii(): String = {
     val spaces = " " * (5 * columns + 1)
     var s = "┌" + spaces + "┐\n"
@@ -163,6 +171,16 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
   /** In-place element-wise addition */
   def +=(m: DenseMatrix): Unit = {
     inplaceOpNoAlloc(m, (a, b) => a + b, this)
+  }
+
+  /** Element-wise substraction */
+  def -(m: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
+    inplaceOp(m, (a, b) => a - b)
+  }
+
+  /** In-place element-wise substraction */
+  def -=(m: DenseMatrix): Unit = {
+    inplaceOpNoAlloc(m, (a, b) => a - b, this)
   }
 
   /** Element-wise multiplication */
@@ -260,30 +278,35 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
     }
   }
 
+  /** Round every element of the matrix. */
   def round()(implicit a: Allocator): DenseMatrix = {
     val res = copy
     res.inplace(math.round(_).toDouble)
     res
   }
 
+  /** Ceil every element of the matrix. */
   def ceil()(implicit a: Allocator): DenseMatrix = {
     val res = copy
     res.inplace(math.ceil)
     res
   }
 
+  /** Floor every element of the matrix. */
   def floor()(implicit a: Allocator): DenseMatrix = {
     val res = copy
     res.inplace(math.floor)
     res
   }
 
+  /** Apply math.signum() to every element of the matrix. */
   def signum()(implicit a: Allocator): DenseMatrix = {
     val res = copy
     inplace(math.signum)
     res
   }
 
+  /** Replace each element by its absolute value. */
   def abs()(implicit a: Allocator): DenseMatrix = {
     val res = copy
     inplace(math.abs)
@@ -514,17 +537,64 @@ class DenseMatrix private (val addr: Addr) extends AnyVal {
 
   /** Vector frobenius norm */
   def norm(): Double = {
-    ???
+    var res: Double = 0;
+    for (col <- 0 until columns) {
+      for (row <- 0 until rows) {
+        res += math.pow(apply(row, col), 2)
+      }
+    }
+    math.sqrt(res)
   }
 
   /* TODO: Eigenvectors and eigenvalues */
 
   /* Lapack operations */
-  def dgemm(alpha: Double, beta: Double, a: DenseMatrix, at: Boolean, b: DenseMatrix, bt: Boolean): Unit = {
+  def dgemm(alpha: Double, beta: Double, a: DenseMatrix, at: Boolean, b: DenseMatrix, bt: Boolean): DenseMatrix = {
+    if (a.columns != b.rows) {
+      throw new RuntimeException("Matrix dimensions mismatch: "
+        + "a is " + a.rows + "×" + a.columns + " while "
+        + "b is " + b.rows + "×" + b.columns + ".")
+    }
+    if (a.rows != rows || b.columns != columns) {
+      throw new RuntimeException("Matrix dimensions mismatch: "
+        + "c is " + rows + "×" + columns + " while multiplication result is "
+        + a.rows + "×" + b.columns)
+    }
     val transa = if (at) LapackJNI.CblasTrans else LapackJNI.CblasNoTrans
     val transb = if (bt) LapackJNI.CblasTrans else LapackJNI.CblasNoTrans
     LapackJNI.cblas_dgemm(LapackJNI.CblasColMajor, transa, transb, a.rows, b.columns, columns,
       alpha, a.dataAddr, a.stride, b.dataAddr, b.stride, beta, dataAddr, stride)
+    this
+  }
+
+  /* used by opt() macros don't use directly */
+  def _maybeUpdateToMulRes(a: DenseMatrix, at: Boolean, b: DenseMatrix, bt: Boolean)(implicit alloc: Allocator): DenseMatrix = {
+    if (a.rows == rows && b.columns == columns) {
+      dgemm(1.0, 0.0, a, at, b, bt)
+      this
+    } else {
+      a * b
+    }
+  }
+
+  def _maybeUpdateToScalarMulRes(v: Double, m: DenseMatrix)(implicit a: Allocator): DenseMatrix = {
+    if (m.rows == rows && m.columns == columns) {
+      updateAll((r, c) => m(r, c) * v)
+      this
+    } else {
+      *(v)
+    }
+  }
+
+  def _maybeUpdateToDGEMM0(alpha: Double, a: DenseMatrix, at: Boolean, b: DenseMatrix, bt: Boolean)(implicit alloc: Allocator): DenseMatrix = {
+    if (a.rows == rows && b.columns == columns) {
+      dgemm(alpha, 0.0, a, at, b, bt)
+      this
+    } else {
+      val res = DenseMatrix.uninit(a.rows, b.columns)
+      res.dgemm(alpha, 0.0, a, at, b, bt)
+      res
+    }
   }
 }
 
@@ -549,6 +619,17 @@ object DenseMatrix {
     }
     m
   }
+
+  /* This poses problem with automatic convertion from Int to Double
+   * and the second wont be able to fix the problem due to erasure.
+  def apply(es: List[Double]*)(implicit a: Allocator): DenseMatrix = {
+    apply(es.toList)
+  }
+
+  def apply(es: List[List[Int]])(implicit a: Allocator): DenseMatrix = {
+    apply(es.map(_.map(_.toDouble)))
+  }
+  */
 
   def uninit(rows: Int, columns: Int)(implicit a: Allocator): DenseMatrix = {
     if (rows <= 0) throw new IllegalArgumentException("Number of rows must be strictly positive")
