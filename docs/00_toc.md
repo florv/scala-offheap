@@ -16,4 +16,5 @@
     * Memory safety
     * Null safety
     * Thread Safety
+1. [Numeric](/docs/10_numeric.md)
 1. [FAQ](/docs/06_faq.md)
